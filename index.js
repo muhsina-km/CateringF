@@ -1,13 +1,17 @@
 const express = require("express");
 const cors = require("cors");
+const mongoose = require("mongoose")
 const multer = require('multer');
 
 const storage = multer.memoryStorage();
 const upload = multer({ storage: storage });
 
 const loginModel = require("./model/login");
-const fooddetailsmodel = require("./model/food");
-const packagedetailsmodel= require("./model/package");
+
+const packagedetailsmodel = require("./model/package");
+const collection = require("./model/user");
+const addressdetailsmodel = require("./model/address");
+const Order = require('./model/Order')
 
 const app = express();
 
@@ -15,114 +19,104 @@ app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 app.use(cors());
 
+// DB Connection 
+mongoose.connect("mongodb+srv://catering:catering@cluster0.xz4ni0q.mongodb.net/cater?retryWrites=true&w=majority")
+    .then(() => { console.log("DB connected") })
+    .catch(err => console.log(err));
+
 // API creation
 app.get('/', (request, response) => {
     response.send("Hai");
 });
 
 
-//PLANT
-//for saving plant data
+//Food Items save
 
-app.post('/pnew', 
-async (request, response) => {
-    try {
-    const { packid,packname,packtype,pprice,pdescription,status } = request.body;
-    console.log(request.body);
-    const newdata = new plantdetailsmodel({
-        packid,
-        packname,
-        packtype,
-        pprice,
-        pdescription,
-        status,
-    })
-    await newdata.save();
-    response.json({message:"Record Saved"});
-} catch(error) {
-    console.error("Error saving data to Mongodb:",error);
-    response.status(500).json({error:"Internal Server Error"})
-}
-});
-
-
-//for retrieving plant data
-
-app.get('/pview', async (request, response) => {
-    try {
-        var data = await plantdetailsmodel.find();
-    response.send(data)
-    } catch(error) {
-        console.error("Error in /pview:",error);
-        response.status(500).json({error:"Internal error"})
-    }
-});
-
-//for update status of plant-delete 
-
-app.put('/updatestatus/:id',async(request,response)=>{
-    let id=request.params.id
-    await plantdetailsmodel.findByIdAndUpdate(id, { $set:{status:"INACTIVE"} });
-    response.send("Record Deleted")
-})
-
-//for modifying the plant details 
-
-app.put('/pedit/:id', async (request, response) => {
-    try {
-        const id = request.params.id;
-        const updatedData = request.body;
-        const updatedPackage = await packagedetailsmodel.findByIdAndUpdate(id, updatedData, { new: true });
-        if (!updatedPackage) {
-            return response.status(404).json({ message: 'Package not found' });
-        }
-        response.json({ message: 'Record Updated', updatedPackage });
-    } catch (error) {
-        console.error('Error updating package details:', error);
-        response.status(500).json({ message: 'Internal server error' });
-    }
-});
-
-
-//PLANT TYPE
-
-// app.post('/ptnew', (request, response) => {
-//     new packagedetailsmodel(request.body).save()
-//     response.send("Success")
-// })
 app.post('/ptnew', upload.single('image'), async (request, response) => {
     try {
-                const { packid,
-                    packname,
-                    packtype,
-                    pprice,
-                    pdescription,
-                    status} = request.body
-                const newdata = new packagedetailsmodel({
-                    packid,
-                    packname,
-                    packtype,
-                    pprice,
-                    pdescription,
-                    status,
-                    image: {
-                        data: request.file.buffer,
-                        contentType: request.file.mimetype,
-                    }
-                })
-                await newdata.save();
-                res.status(200).json({ message: 'items added successfully' });
-        }
-    catch (error) 
-    {
-                response.status(500).json({ error: 'Internal Server Error' });
+        const { packid,
+            packname,
+            packtype,
+            pprice,
+            pdescription,
+            status } = request.body
+        const newdata = new packagedetailsmodel({
+            packid,
+            packname,
+            packtype,
+            pprice,
+            pdescription,
+            status,
+            image: {
+                data: request.file.buffer,
+                contentType: request.file.mimetype,
+            }
+        })
+        await newdata.save();
+
+        res.status(200).json({ message: 'items added successfully' });
+    }
+    catch (error) {
+        response.status(500).json({ error: 'Internal Server Error' });
     }
 }
 )
 
+//Food Items edit
+
+app.put('/ptedit/:id', upload.single('image'), async (request, response) => {
+
+    try {
+        const id = request.params.id;
+        const { packid, packname, packtype, pprice, pdescription, status } = request.body;
+        let result = null;
+        if (request.file) {
+            console.log("sdjfbjs")
+            const updatedData = {
+                packid,
+                packname,
+                packtype,
+                pprice,
+                pdescription,
+                status,
+                image: {
+                    data: request.file.buffer,
+                    contentType: request.file.mimetype,
+                }
+
+            };
+            result = await packagedetailsmodel.findByIdAndUpdate(id, updatedData);
+        }
+        else {
+            const updatedData = {
+                packid,
+                packname,
+                packtype,
+                pprice,
+                pdescription,
+                status,
+
+            }
+            result = await packagedetailsmodel.findByIdAndUpdate(id, updatedData);
+        }
+
+
+        if (!result) {
+            return response.status(404).json({ message: 'Item not found' });
+        }
+
+        response.status(200).json({ message: 'Item updated successfully', data: result });
+    } catch (error) {
+        console.error(error);
+        response.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
+
+//Food Items view
 
 app.get('/ptview', async (request, response) => {
-    var data = await packagedetailsmodel.find();
+    var data = await packagedetailsmodel.find()
     response.send(data)
 })
 
@@ -132,34 +126,122 @@ app.put('/ptupdatestatus/:id', async (request, response) => {
     response.send("Record Deleted")
 })
 
+//User Side
+app.post("/userlogin", async (req, res) => {
+    const { email, password } = req.body
 
-app.put('/ptedit/:id', async (request, response) => {
-    let id = request.params.id
-    await packagedetailsmodel.findByIdAndUpdate(id, request.body)
-    response.send("Record Updated")
+    try {
+        const check = await collection.findOne({ email: email })
+
+        if (check) {
+            res.json("exist")
+        }
+        else {
+            res.json("notexist")
+        }
+
+    }
+    catch (e) {
+        res.json("fail")
+    }
 
 })
 
 
 
+app.post("/signup", async (req, res) => {
+    const { email, password } = req.body
 
-///
+    const data = {
+        email: email,
+        password: password
+    }
 
-app.get('/pakview/:id', async (req, res) => {
     try {
-      const packageId = req.params.id;
-      const packageDetails = await packagedetailsmodel.findById(packageId); // Corrected model name
-      if (!packageDetails) {
-        return res.status(404).json({ message: 'Package not found' });
-      }
-      res.json(packageDetails);
+        const check = await collection.findOne({ email: email })
+
+        if (check) {
+            res.json("exist")
+        }
+        else {
+            res.json("notexist")
+            await collection.insertMany([data])
+        }
+
+    }
+    catch (e) {
+        res.json("fail")
+    }
+
+})
+
+
+// Assign port
+app.listen(4005, () => {
+    console.log("Port is running on 4005");
+});
+
+//save address
+
+app.post('/cnew', async (request, response) => {
+    try {
+        new addressdetailsmodel(request.body).save();
+        response.send("Record saved Sucessfully")
+    }
+    catch (error) {
+        response.status(500).json({ error: 'Internal Server Error' });
+    }
+}
+)
+
+//address view
+
+app.get('/addressview', async (req, res) => {
+    // var data = await Order.find()
+    // response.send(data)
+
+    Order.aggregate([
+        {
+            $lookup: {
+                from: "packages",
+                localField: "product",
+                foreignField: "_id",
+                as: "product",
+            }
+        },
+        // {
+
+        //     $unwind: "$packages",
+        // }
+    ]).then(response => {
+        console.log(response)
+        res.status(200).json({ response })
+    })
+
+})
+
+// app.put('/ptupdatestatus/:id', async (request, response) => {
+//     let id = request.params.id
+//     await addressdetailsmodel.findByIdAndUpdate(id, { $set: { Status: "INACTIVE" } })
+//     response.send("Record Deleted")
+// })
+
+
+// Route to save the order
+app.post('/api/saveOrder', async (req, res) => {
+    try {
+
+        console.log(req.body)
+
+        const newOrder = new Order(req.body)
+
+        newOrder.save().then(data => {
+            console.log(data)
+        })
+
+        res.status(201).json({ message: 'Packages saved successfully', });
     } catch (error) {
-      console.error('Error fetching package details:', error);
-      res.status(500).json({ message: 'Internal server error' });
+        res.status(500).json({ error: 'Internal Server Error', error });
     }
 });
 
-// Assign port
-app.listen(3005, () => {
-    console.log("Port is running on 3005");
-});
